@@ -3,22 +3,18 @@ name: Full Upstream Sync (Best Version)
 on:
   schedule:
     - cron: "0 18 * * *"      # 每天 18:00
-  workflow_dispatch:
-  watch:
-    types: [started]
+  workflow_dispatch:           # 可手动触发
 
 env:
   UPSTREAM_REPO: "https://github.com/frankiejun/wxpush.git"
   SYNC_BRANCH_PREFIX: "sync-upstream"
   SYNC_BRANCHES: "main dev release"   # 可自由调整
-  TELEGRAM_ENABLE: "true"             # ← 填 true 开启通知
+  TELEGRAM_ENABLE: "true"             # 填 true 开启通知
   DISCORD_ENABLE: "false"
 
 jobs:
   sync:
     runs-on: ubuntu-latest
-    # 仅仓库所有者可触发（禁止陌生 Fork 自动触发）
-    if: github.event.repository.owner.id == github.event.sender.id
 
     steps:
       - name: Checkout
@@ -87,7 +83,7 @@ jobs:
           fi
 
       - name: Create Conflict Issue
-        if: env.conflict == 'true'
+        if: ${{ env.conflict == 'true' }}
         uses: peter-evans/create-issue-from-file@v5
         with:
           title: "❗ Upstream Sync Merge Conflict"
@@ -98,14 +94,14 @@ jobs:
         run: git push origin --tags
 
       - name: Auto merge PR (if no conflict)
-        if: env.conflict == 'false'
+        if: ${{ env.conflict == 'false' }}
         uses: peter-evans/enable-pull-request-automerge@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           merge-method: squash
 
       - name: Notify Telegram
-        if: env.TELEGRAM_ENABLE == 'true'
+        if: ${{ env.TELEGRAM_ENABLE == 'true' }}
         run: |
           MSG="Upstream Sync 完成。冲突状态：${{ env.conflict }}"
           curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
