@@ -8,7 +8,7 @@ on:
     types: [started]
 
 env:
-  UPSTREAM_REPO: "https://github.com/xxxxx/xxxxx.git"
+  UPSTREAM_REPO: "https://github.com/frankiejun/wxpush.git"
   SYNC_BRANCH_PREFIX: "sync-upstream"
   SYNC_BRANCHES: "main dev release"   # 可自由调整
   TELEGRAM_ENABLE: "true"             # ← 填 true 开启通知
