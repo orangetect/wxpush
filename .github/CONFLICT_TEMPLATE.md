@@ -19,8 +19,6 @@ jobs:
     runs-on: ubuntu-latest
     # 仅仓库所有者可触发（禁止陌生 Fork 自动触发）
     if: github.event.repository.owner.login == github.repository_owner
-    
-    # if: github.event.repository.owner.id == github.event.sender.id
 
     steps:
       - name: Checkout
