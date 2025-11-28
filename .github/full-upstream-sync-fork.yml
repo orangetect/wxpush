@@ -4,18 +4,36 @@ on:
     branches:
       - main
 
+concurrency:
+  group: sync-upstream-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
 env:
-  UPSTREAM_REPO: "https://github.com/xxxxx/xxxxx.git"
+  UPSTREAM_REPO: "https://github.com/frankiejun/wxpush.git"  # <-- 改为上游仓库 URL
   SYNC_BRANCH_PREFIX: "sync-upstream"
-  SYNC_BRANCHES: "main dev release"
-  TELEGRAM_ENABLE: "true"
+  SYNC_BRANCHES: "main dev release"   # <-- 根据需要调整
+  TELEGRAM_ENABLE: "true"             # true 则发送 Telegram 通知（需 secrets）
   DISCORD_ENABLE: "false"
 
 jobs:
   sync:
     runs-on: ubuntu-latest
-
     steps:
+      - name: Owner-only for manual runs
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          if [ "${{ github.actor }}" != "${{ github.repository_owner }}" ]; then
+            echo "Only repository owner (${{
+              github.repository_owner
+            }}) may run this workflow manually. Triggering actor: ${{ github.actor }}."
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -26,83 +44,127 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Add upstream remote
+      - name: Add upstream remote and fetch
         run: |
           if git remote | grep -q '^upstream$'; then
             echo "Upstream exists."
           else
-            git remote add upstream $UPSTREAM_REPO
+            git remote add upstream "$UPSTREAM_REPO"
           fi
-          git fetch upstream --tags
+          git fetch upstream --tags --prune
+          git fetch origin --prune
 
-      - name: Detect default branch
-        id: branch
+      - name: Prepare vars
+        id: prep
         run: |
-          DEFAULT=$(git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@' || echo "main")
-          echo "default_branch=$DEFAULT" >> $GITHUB_OUTPUT
+          REPO_FULL="${{ github.repository }}"    # owner/repo
+          REPO_OWNER="${{ github.repository_owner }}"
+          REPO_NAME="${REPO_FULL#*/}"
+          echo "repo_full=$REPO_FULL" >> $GITHUB_OUTPUT
+          echo "repo_owner=$REPO_OWNER" >> $GITHUB_OUTPUT
+          echo "repo_name=$REPO_NAME" >> $GITHUB_OUTPUT
 
-      - name: Sync branches
+      - name: Sync branches and create PRs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          BRANCHES=""
+          set -euo pipefail
+          REPO_FULL="${{ steps.prep.outputs.repo_full }}"
+          REPO_OWNER="${{ steps.prep.outputs.repo_owner }}"
+          echo "Repository: $REPO_FULL ; Owner: $REPO_OWNER"
+
+          SYNCED=""
           for BR in $SYNC_BRANCHES; do
-            echo ">>> Syncing branch: $BR"
-            if ! git branch -a | grep -q "origin/$BR"; then
-              echo "Branch $BR not found, skip."
+            echo ">>> Processing upstream branch: $BR"
+
+            # Ensure origin has the branch
+            if ! git ls-remote --exit-code origin refs/heads/"$BR" >/dev/null 2>&1; then
+              echo "Origin does not have branch $BR — skipping."
               continue
             fi
-            SYNC_BRANCH="${SYNC_BRANCH_PREFIX}-${BR}-$(date +%Y%m%d-%H%M%S)"
+
+            TIMESTAMP=$(date -u +"%Y%m%d-%H%M%S")
+            SYNC_BRANCH="${SYNC_BRANCH_PREFIX}-${BR}-${TIMESTAMP}"
+            echo "Creating local branch $SYNC_BRANCH from origin/$BR"
             git checkout -b "$SYNC_BRANCH" "origin/$BR"
-            git merge "upstream/$BR" --no-edit || true
+
+            echo "Merging upstream/$BR into $SYNC_BRANCH"
+            # Fetch upstream branch and attempt merge
+            if git fetch upstream "$BR":"refs/remotes/upstream/$BR"; then
+              if ! git merge --no-edit "upstream/$BR"; then
+                echo "Merge reported conflicts for $BR"
+              fi
+            else
+              echo "Could not fetch upstream/$BR, skipping merge step."
+            fi
+
+            # Detect conflicts
+            if git ls-files -u | grep -q .; then
+              echo "Conflict detected when merging upstream/$BR into $SYNC_BRANCH"
+              CONFLICT=true
+            else
+              CONFLICT=false
+            fi
+
+            echo "Pushing $SYNC_BRANCH to origin"
             git push origin "$SYNC_BRANCH"
-            BRANCHES="$BRANCHES $SYNC_BRANCH"
+
+            # Create PR in the fork repo (origin)
+            PR_TITLE="🔄 Sync from Upstream: $BR"
+            PR_BODY="自动从 upstream 同步。\n\n同步分支：\n- upstream/$BR -> $SYNC_BRANCH\n\n冲突： $CONFLICT"
+
+            create_response=$(curl -s -o /dev/stderr -w "%{http_code}" -X POST \
+              -H "Authorization: token $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              https://api.github.com/repos/$REPO_FULL/pulls \
+              -d "$(jq -n --arg t "$PR_TITLE" --arg h "$SYNC_BRANCH" --arg b "$BR" --arg body "$PR_BODY" \
+                    '{title:$t, head:$h, base:$b, body:$body}')") || true
+
+            # If 201 created then good, if 422 maybe PR exists — try to find existing PR
+            if [ "$create_response" = "201" ]; then
+              echo "PR created for $SYNC_BRANCH -> $BR"
+            else
+              echo "PR creation status: $create_response (may already exist). Attempting to find existing PR."
+              # try to find existing PR
+              existing=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+                -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/$REPO_FULL/pulls?head=${REPO_OWNER}:${SYNC_BRANCH}&base=$BR")
+              if echo "$existing" | jq -e '.[0] | .html_url' >/dev/null 2>&1; then
+                url=$(echo "$existing" | jq -r '.[0].html_url')
+                echo "Found existing PR: $url"
+              else
+                echo "No existing PR found or creation failed (HTTP $create_response)."
+              fi
+            fi
+
+            # If conflict, create an issue to notify
+            if [ "$CONFLICT" = "true" ]; then
+              ISSUE_TITLE="❗ Upstream Sync Merge Conflict: $BR"
+              ISSUE_BODY="在尝试将 upstream/$BR 合并到 $BR 时产生冲突。\n\nSync branch: $SYNC_BRANCH\n请手动解决冲突。"
+
+              curl -s -X POST \
+                -H "Authorization: token $GITHUB_TOKEN" \
+                -H "Accept: application/vnd.github+json" \
+                https://api.github.com/repos/$REPO_FULL/issues \
+                -d "$(jq -n --arg t "$ISSUE_TITLE" --arg b "$ISSUE_BODY" '{title:$t, body:$b, labels:["conflict"]}')"
+            fi
+
+            SYNCED="$SYNCED $SYNC_BRANCH"
           done
-          echo "sync_branches=$BRANCHES" >> $GITHUB_ENV
 
-      - name: Create Pull Requests
-        uses: peter-evans/create-pull-request@v6
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          title: "🔄 Sync from Upstream"
-          body: |
-            自动从 upstream 同步。
-            同步分支：
-            ```
-            ${{ env.sync_branches }}
-            ```
-            若出现冲突，请按 Issue 提示处理。
-          branch: ${{ env.sync_branches }}
-          labels: ["sync", "automated"]
+          echo "synced_branches=$SYNCED" >> $GITHUB_ENV
 
-      - name: Detect merge conflicts
+      - name: Push tags
         run: |
-          if git ls-files -u | grep -q .; then
-            echo "conflict=true" >> $GITHUB_ENV
-          else
-            echo "conflict=false" >> $GITHUB_ENV
-          fi
+          git push origin --tags || true
 
-      - name: Create Conflict Issue
-        if: env.conflict == 'true'
-        uses: peter-evans/create-issue-from-file@v5
-        with:
-          title: "❗ Upstream Sync Merge Conflict"
-          content-filepath: .github/CONFLICT_TEMPLATE.md
-          labels: conflict
-
-      - name: Sync tags
-        run: git push origin --tags
-
-      - name: Auto merge PR (if no conflict)
-        if: env.conflict == 'false'
-        uses: peter-evans/enable-pull-request-automerge@v3
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          merge-method: squash
-
-      - name: Notify Telegram
+      - name: Telegram notify
         if: env.TELEGRAM_ENABLE == 'true'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          MSG="Upstream Sync 完成。冲突状态：${{ env.conflict }}"
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-          -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-          -d text="$MSG"
+          MSG="Upstream Sync completed on ${{ github.repository }}. Synced: ${{ env.synced_branches }}"
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            -d text="$MSG"
