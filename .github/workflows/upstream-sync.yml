@@ -49,17 +49,21 @@ jobs:
             echo "changes_detected=false" >> $GITHUB_OUTPUT
             echo "✅ Repository is up to date"
           else
-            # 检查是否有实际的文件更改
-            if git diff --name-only main..upstream/main | grep -v -E '(^$|^Merge )' | head -1 > /dev/null; then
+            # 检查是否有实际的文件差异
+            if ! git diff --quiet main upstream/main; then
               echo "changes_detected=true" >> $GITHUB_OUTPUT
-              echo "🔄 Real changes detected, need to sync"
+              echo "🔄 Real file changes detected, need to sync"
+              
+              # 显示具体的文件差异
+              echo "File differences:"
+              git diff --name-status main upstream/main
             else
               echo "changes_detected=false" >> $GITHUB_OUTPUT
-              echo "✅ No real file changes detected"
+              echo "✅ No file changes, only commit history differences"
             fi
           fi
 
-      - name: Create sync branch and merge
+      - name: Reset and force update
         if: steps.check_changes.outputs.changes_detected == 'true'
         id: merge
         run: |
@@ -69,22 +73,26 @@ jobs:
           echo "Creating sync branch: $SYNC_BRANCH"
           git checkout -b $SYNC_BRANCH
           
-          echo "Merging upstream changes..."
-          # 使用简单的合并命令
-          if git merge --no-edit --no-ff upstream/main; then
+          echo "Resetting to upstream/main to capture all changes..."
+          # 使用 reset 而不是 merge 来确保获取所有更改
+          git reset --hard upstream/main
+          
+          echo "✅ Successfully updated to upstream version"
+          
+          # 检查是否有实际更改需要提交
+          if ! git diff --quiet main..$SYNC_BRANCH; then
             echo "merge_status=success" >> $GITHUB_OUTPUT
-            echo "✅ Merge successful"
+            echo "🔄 Real changes confirmed, ready to create PR"
           else
-            echo "merge_status=conflict" >> $GITHUB_OUTPUT
-            echo "❌ Merge conflict"
-            git merge --abort 2>/dev/null || true
+            echo "merge_status=no_changes" >> $GITHUB_OUTPUT
+            echo "⚠️ No actual changes after reset, skipping PR"
           fi
 
       - name: Push sync branch
         if: steps.check_changes.outputs.changes_detected == 'true' && steps.merge.outputs.merge_status == 'success'
         run: |
           echo "Pushing sync branch..."
-          git push origin ${{ steps.merge.outputs.branch_name }}
+          git push --force origin ${{ steps.merge.outputs.branch_name }}
           echo "✅ Branch pushed: ${{ steps.merge.outputs.branch_name }}"
 
       - name: Create Pull Request
@@ -98,26 +106,42 @@ jobs:
               const pr = await github.rest.pulls.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                title: 'Sync upstream changes from wxpush',
+                title: '🔄 Sync upstream changes from wxpush',
                 head: syncBranch,
                 base: 'main',
-                body: '## Upstream Sync\n\nAutomated sync from: ' + '${{ env.UPSTREAM_REPO }}' + '\n\nSync time: ' + new Date().toISOString()
+                body: `## 🔄 上游同步
+                
+此 PR 包含从上游仓库 [frankiejun/wxpush](${{ env.UPSTREAM_REPO }}) 同步的更改。
+
+### 同步信息
+- **同步分支**: \`${syncBranch}\`  
+- **同步时间**: ${new Date().toISOString()}
+- **上游提交**: d5e45eb1a9f01acd2b12499ae1821251f3431371
+- **本地提交**: 8914b120cf04fdc61dedd66b9495e68dba9efa9b
+
+### 检查清单
+- [ ] 验证微信推送功能正常
+- [ ] 检查配置文件兼容性
+- [ ] 确认依赖更新无冲突
+
+---
+*🤖 自动创建*`
               });
               
-              console.log('PR created: ' + pr.data.html_url);
+              console.log('✅ PR 创建成功: ' + pr.data.html_url);
               
               await github.rest.issues.addLabels({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: pr.data.number,
-                labels: ['auto-sync', 'upstream']
+                labels: ['auto-sync', 'upstream', 'wxpush']
               });
               
             } catch (error) {
-              console.error('Failed to create PR: ' + error);
+              console.error('❌ 创建 PR 失败: ' + error);
             }
 
-      - name: Skip notification when no changes
+      - name: Skip when no changes
         if: steps.check_changes.outputs.changes_detected == 'false'
         run: |
-          echo "✅ No changes detected, skipping PR creation"
+          echo "✅ 没有检测到需要同步的更改"
