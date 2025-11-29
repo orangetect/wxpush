@@ -2,8 +2,8 @@ name: Full Upstream Sync (Best Version)
 
 on:
   schedule:
-    - cron: "0 18 * * *"  # 每天 18:00
-  workflow_dispatch:  # 允许手动触发
+    - cron: "0 18 * * *"      # 每天 18:00
+  workflow_dispatch:
   watch:
     types: [started]
 
@@ -17,6 +17,7 @@ env:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    # 仅仓库所有者可触发（禁止陌生 Fork 自动触发）
     if: github.event.repository.owner.id == github.event.sender.id
 
     steps:
@@ -61,6 +62,7 @@ jobs:
             BRANCHES="$BRANCHES $SYNC_BRANCH"
           done
           echo "sync_branches=$BRANCHES" >> $GITHUB_ENV
+          echo "Branches synced: $BRANCHES"
 
       - name: Create Pull Requests
         uses: peter-evans/create-pull-request@v6
