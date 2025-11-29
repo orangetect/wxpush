@@ -113,23 +113,6 @@ jobs:
               console.error('Failed to create PR: ' + error);
             }
 
-      - name: Send Telegram Notification
-        if: always() && secrets.TELEGRAM_TOKEN
-        uses: appleboy/telegram-action@master
-        with:
-          to: ${{ secrets.TELEGRAM_TO }}
-          token: ${{ secrets.TELEGRAM_TOKEN }}
-          message: "Upstream Sync: ${{ job.status }}, Repo: ${{ github.repository }}, Changes: ${{ steps.check_changes.outputs.changes_detected }}"
-
-      - name: Send Discord Notification
-        if: always() && secrets.DISCORD_WEBHOOK
-        uses: sarisia/actions-status-discord@v1
-        with:
-          webhook: ${{ secrets.DISCORD_WEBHOOK }}
-          title: "Upstream Sync - ${{ job.status }}"
-          description: "Repository: ${{ github.repository }}\nChanges: ${{ steps.check_changes.outputs.changes_detected }}"
-          color: ${{ job.status == 'success' && '00ff00' : 'ff0000' }}
-
       - name: Cleanup
         if: always()
         run: |
