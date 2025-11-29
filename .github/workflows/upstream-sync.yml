@@ -124,7 +124,7 @@ jobs:
             }
 
       - name: Send Telegram Notification
-        if: always() && secrets.TELEGRAM_TOKEN
+        if: always()
         uses: appleboy/telegram-action@master
         with:
           to: ${{ secrets.TELEGRAM_TO }}
