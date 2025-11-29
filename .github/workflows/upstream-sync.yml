@@ -53,10 +53,6 @@ jobs:
             if ! git diff --quiet main upstream/main; then
               echo "changes_detected=true" >> $GITHUB_OUTPUT
               echo "🔄 Real file changes detected, need to sync"
-              
-              # 显示具体的文件差异
-              echo "File differences:"
-              git diff --name-status main upstream/main
             else
               echo "changes_detected=false" >> $GITHUB_OUTPUT
               echo "✅ No file changes, only commit history differences"
@@ -101,34 +97,19 @@ jobs:
         with:
           script: |
             const syncBranch = '${{ steps.merge.outputs.branch_name }}';
+            const upstreamRepo = '${{ env.UPSTREAM_REPO }}';
             
             try {
               const pr = await github.rest.pulls.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                title: '🔄 Sync upstream changes from wxpush',
+                title: 'Sync upstream changes from wxpush',
                 head: syncBranch,
                 base: 'main',
-                body: `## 🔄 上游同步
-                
-此 PR 包含从上游仓库 [frankiejun/wxpush](${{ env.UPSTREAM_REPO }}) 同步的更改。
-
-### 同步信息
-- **同步分支**: \`${syncBranch}\`  
-- **同步时间**: ${new Date().toISOString()}
-- **上游提交**: d5e45eb1a9f01acd2b12499ae1821251f3431371
-- **本地提交**: 8914b120cf04fdc61dedd66b9495e68dba9efa9b
-
-### 检查清单
-- [ ] 验证微信推送功能正常
-- [ ] 检查配置文件兼容性
-- [ ] 确认依赖更新无冲突
-
----
-*🤖 自动创建*`
+                body: '## Upstream Sync\n\nThis PR contains changes synced from upstream repository: ' + upstreamRepo + '\n\nSync time: ' + new Date().toISOString() + '\n\n### Checklist\n- [ ] Verify WeChat push functionality\n- [ ] Check configuration compatibility\n- [ ] Confirm no breaking changes'
               });
               
-              console.log('✅ PR 创建成功: ' + pr.data.html_url);
+              console.log('PR created: ' + pr.data.html_url);
               
               await github.rest.issues.addLabels({
                 owner: context.repo.owner,
@@ -138,10 +119,10 @@ jobs:
               });
               
             } catch (error) {
-              console.error('❌ 创建 PR 失败: ' + error);
+              console.error('Failed to create PR: ' + error);
             }
 
       - name: Skip when no changes
         if: steps.check_changes.outputs.changes_detected == 'false'
         run: |
-          echo "✅ 没有检测到需要同步的更改"
+          echo "✅ No changes detected, skipping sync"
