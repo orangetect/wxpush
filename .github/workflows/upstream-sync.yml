@@ -137,7 +137,6 @@ jobs:
             Repository: ${{ github.repository }}
             Changes: ${{ steps.check_changes.outputs.changes_detected }}
             Status: ${{ steps.check_changes.outputs.status }}
-            ${{ steps.create_pr.outputs.pr_url && format('PR: {0}', steps.create_pr.outputs.pr_url) || '' }}
             Time: $(date -u +"%Y-%m-%d %H:%M UTC")
 
       - name: Send Discord Notification
@@ -146,7 +145,7 @@ jobs:
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK }}
           title: "Upstream Sync - ${{ job.status }}"
-          description: "Repository: ${{ github.repository }}\nStatus: ${{ steps.check_changes.outputs.status }}\nChanges: ${{ steps.check_changes.outputs.changes_detected }}\n${{ steps.create_pr.outputs.pr_url && format('PR: %s', steps.create_pr.outputs.pr_url) || '' }}"
+          description: "Repository: ${{ github.repository }}\nStatus: ${{ steps.check_changes.outputs.status }}\nChanges: ${{ steps.check_changes.outputs.changes_detected }}"
           color: ${{ job.status == 'success' && '00ff00' : 'ff0000' }}
 
       - name: Cleanup
