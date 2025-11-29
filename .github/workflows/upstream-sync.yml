@@ -112,7 +112,17 @@ jobs:
             } catch (error) {
               console.error('Failed to create PR: ' + error);
             }
-
+      - name: Send Telegram Notification
+        if: always()
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_TO }}
+          token: ${{ secrets.TELEGRAM_TOKEN }}
+          message: "🔄 Upstream Sync Completed
+Status: ${{ job.status }}
+Repository: ${{ github.repository }}
+Changes: ${{ steps.check_changes.outputs.changes_detected }}
+Time: $(date -u +"%Y-%m-%d %H:%M UTC")"
       - name: Cleanup
         if: always()
         run: |
