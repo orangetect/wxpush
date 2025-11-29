@@ -1,4 +1,4 @@
-# WX Push - 微信消息推送服务 (Cloudflare Workers)
+# WXPush - 微信消息推送服务 (Cloudflare Workers)
 
 这是一个基于 [Cloudflare Workers](https://workers.cloudflare.com/) 搭建的、轻量级的微信公众号模板消息推送服务。它提供了一个简单的 API 接口，让您可以轻松地通过 HTTP 请求将消息推送到指定的微信用户。
 
@@ -9,6 +9,15 @@
 - **高度可定制**: 支持通过 URL 参数临时覆盖默认的微信配置。
 - **安全**: 敏感信息通过 Cloudflare 的 Secrets 进行加密存储，不暴露在代码中。
 - **成本低廉**: 享受 Cloudflare Workers 慷慨的免费套餐（每日 10 万次请求）。
+
+## 🎬 视频教学
+
+我们制作了一个详细的视频教程，手把手教您如何完成所有部署步骤。如果您偏爱视频指导，请点击下方链接观看：
+
+[<img src="https://look.pics.cloudns.ch/img/极简微信消息推送服务-封面.jpg" alt="点击观看视频教程" width="480">](https://youtu.be/sE1Kcol_XRs?si=G-UbUGlMhyysv-US)
+
+*点击上方图片或链接，即可跳转到 YouTube 观看视频教程。*
+
 
 ## 🚀 部署指南
 
@@ -115,6 +124,55 @@ https://<您的Worker地址>/wxsend?title=服务器通知&content=服务已于�
 
 ```
 https://<您的Worker地址>/wxsend?title=私人提醒&content=记得带钥匙&token=your_secret_token&userid=temporary_openid_here
+```
+
+### Webhook / POST 请求
+
+除了 `GET` 请求，服务也支持 `POST` 方法，更适合用于自动化的 Webhook 集成。
+
+**请求地址**
+
+```
+https://<您的Worker地址>/wxsend
+```
+
+**请求方法**
+
+```
+POST
+```
+
+**请求头 (Headers)**
+
+```json
+{
+  "Authorization": "你的token",
+  "Content-Type": "application/json"
+}
+```
+
+**请求体 (Body)**
+
+请求体需要是一个 JSON 对象，包含与 `GET` 请求相同的参数。
+
+```json
+{
+  "title": "Webhook 通知",
+  "content": "这是一个通过 POST 请求发送的 Webhook 消息。"
+}
+```
+
+**使用示例 (cURL)**
+
+```bash
+curl -X POST \
+  https://<您的Worker地址>/wxsend \
+  -H 'Authorization': '你的token' \
+  -H 'Content-Type': 'application/json' \
+  -d '{
+    "title": "来自 cURL 的消息",
+    "content": "自动化任务已完成。"
+  }'
 ```
 
 ### 成功响应
