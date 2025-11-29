@@ -57,7 +57,7 @@ jobs:
             fi
           fi
 
-      - name: Reset and force update
+      - name: Create sync branch and merge
         if: steps.check_changes.outputs.changes_detected == 'true'
         id: merge
         run: |
@@ -66,20 +66,35 @@ jobs:
           
           echo "Creating sync branch: $SYNC_BRANCH"
           git checkout -b $SYNC_BRANCH
-          git reset --hard upstream/main
           
-          if ! git diff --quiet main..$SYNC_BRANCH; then
-            echo "merge_status=success" >> $GITHUB_OUTPUT
-            echo "🔄 Real changes confirmed"
+          echo "Merging upstream changes with a commit..."
+          # 使用 merge 而不是 reset，确保有提交
+          if git merge --no-ff --no-commit upstream/main; then
+            # 如果有更改，创建提交
+            if ! git diff --cached --quiet || ! git diff --quiet; then
+              git commit -m "🔀 chore: sync upstream changes from wxpush
+              
+              Automated sync from: ${{ env.UPSTREAM_REPO }}
+              Sync time: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+              
+              Includes changes from upstream repository."
+              echo "merge_status=success" >> $GITHUB_OUTPUT
+              echo "✅ Merge successful with commit"
+            else
+              echo "merge_status=no_changes" >> $GITHUB_OUTPUT
+              echo "⚠️ No actual changes after merge"
+              git reset --hard HEAD
+            fi
           else
-            echo "merge_status=no_changes" >> $GITHUB_OUTPUT
-            echo "⚠️ No actual changes after reset"
+            echo "merge_status=conflict" >> $GITHUB_OUTPUT
+            echo "❌ Merge conflict detected"
+            git merge --abort 2>/dev/null || true
           fi
 
       - name: Push sync branch
         if: steps.check_changes.outputs.changes_detected == 'true' && steps.merge.outputs.merge_status == 'success'
         run: |
-          git push --force origin ${{ steps.merge.outputs.branch_name }}
+          git push origin ${{ steps.merge.outputs.branch_name }}
           echo "✅ Branch pushed: ${{ steps.merge.outputs.branch_name }}"
 
       - name: Create Pull Request
@@ -114,12 +129,12 @@ jobs:
             }
 
       - name: Send Telegram Notification
-        if: always()
+        if: always() && secrets.TELEGRAM_TOKEN
         uses: appleboy/telegram-action@master
         with:
           to: ${{ secrets.TELEGRAM_TO }}
           token: ${{ secrets.TELEGRAM_TOKEN }}
-          message: "🔄 Upstream Sync: ${{ job.status }}, Repo: ${{ github.repository }}, Changes: ${{ steps.check_changes.outputs.changes_detected }}"
+          message: "🔄 Upstream Sync: ${{ job.status }}, Repo: ${{ github.repository }}, Changes: ${{ steps.check_changes.outputs.changes_detected }}, PR: ${{ steps.merge.outputs.merge_status == 'success' && 'Created' : 'Failed' }}"
 
       - name: Cleanup
         if: always()
