@@ -47,19 +47,15 @@ jobs:
           
           if [ "$LOCAL_COMMIT" = "$UPSTREAM_COMMIT" ]; then
             echo "changes_detected=false" >> $GITHUB_OUTPUT
-            echo "✅ 仓库已是最新，无需同步"
+            echo "✅ Repository is up to date"
           else
-            # 检查是否有实际的文件更改（不仅仅是合并提交）
+            # 检查是否有实际的文件更改
             if git diff --name-only main..upstream/main | grep -v -E '(^$|^Merge )' | head -1 > /dev/null; then
               echo "changes_detected=true" >> $GITHUB_OUTPUT
-              echo "🔄 检测到实际文件更改，需要同步"
-              
-              # 显示更改的文件列表
-              echo "更改的文件:"
-              git diff --name-only main..upstream/main
+              echo "🔄 Real changes detected, need to sync"
             else
               echo "changes_detected=false" >> $GITHUB_OUTPUT
-              echo "✅ 没有实质性文件更改，无需同步"
+              echo "✅ No real file changes detected"
             fi
           fi
 
@@ -70,39 +66,26 @@ jobs:
           SYNC_BRANCH="${{ env.SYNC_BRANCH_PREFIX }}-$(date +%s)"
           echo "branch_name=$SYNC_BRANCH" >> $GITHUB_OUTPUT
           
-          echo "创建同步分支: $SYNC_BRANCH"
+          echo "Creating sync branch: $SYNC_BRANCH"
           git checkout -b $SYNC_BRANCH
           
-          echo "合并上游更改..."
-          # 使用 --no-commit 先检查合并结果
-          if git merge --no-commit --no-ff upstream/main; then
+          echo "Merging upstream changes..."
+          # 使用简单的合并命令
+          if git merge --no-edit --no-ff upstream/main; then
             echo "merge_status=success" >> $GITHUB_OUTPUT
-            
-            # 检查是否有实际更改需要提交
-            if ! git diff --cached --quiet || ! git diff --quiet; then
-              git commit -m "chore: sync upstream changes from wxpush
-              
-              Automated sync from: ${{ env.UPSTREAM_REPO }}
-              Timestamp: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-              echo "✅ 合并成功并创建提交"
-            else
-              echo "merge_status=no_changes" >> $GITHUB_OUTPUT
-              echo "⚠️ 合并成功但没有实际更改，跳过提交"
-              # 回滚合并
-              git reset --hard HEAD
-            fi
+            echo "✅ Merge successful"
           else
             echo "merge_status=conflict" >> $GITHUB_OUTPUT
-            echo "❌ 合并冲突"
+            echo "❌ Merge conflict"
             git merge --abort 2>/dev/null || true
           fi
 
       - name: Push sync branch
         if: steps.check_changes.outputs.changes_detected == 'true' && steps.merge.outputs.merge_status == 'success'
         run: |
-          echo "推送同步分支..."
+          echo "Pushing sync branch..."
           git push origin ${{ steps.merge.outputs.branch_name }}
-          echo "✅ 分支已推送: ${{ steps.merge.outputs.branch_name }}"
+          echo "✅ Branch pushed: ${{ steps.merge.outputs.branch_name }}"
 
       - name: Create Pull Request
         if: steps.check_changes.outputs.changes_detected == 'true' && steps.merge.outputs.merge_status == 'success'
@@ -115,41 +98,26 @@ jobs:
               const pr = await github.rest.pulls.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                title: '🔄 Sync upstream changes from wxpush',
+                title: 'Sync upstream changes from wxpush',
                 head: syncBranch,
                 base: 'main',
-                body: `## 🔄 上游同步
-                
-此 PR 包含从上游仓库 [frankiejun/wxpush](${{ env.UPSTREAM_REPO }}) 自动同步的更改。
-
-### 同步信息
-- **同步分支**: \`${syncBranch}\`
-- **同步时间**: ${new Date().toISOString()}
-- **上游仓库**: ${{ env.UPSTREAM_REPO }}
-
-### 检查清单
-- [ ] 验证微信推送功能正常
-- [ ] 检查配置文件兼容性
-- [ ] 确认依赖更新无冲突
-
----
-*🤖 自动创建于 ${new Date().toISOString()}*`
+                body: '## Upstream Sync\n\nAutomated sync from: ' + '${{ env.UPSTREAM_REPO }}' + '\n\nSync time: ' + new Date().toISOString()
               });
               
-              console.log('✅ PR 创建成功: ' + pr.data.html_url);
+              console.log('PR created: ' + pr.data.html_url);
               
               await github.rest.issues.addLabels({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: pr.data.number,
-                labels: ['auto-sync', 'upstream', 'wxpush']
+                labels: ['auto-sync', 'upstream']
               });
               
             } catch (error) {
-              console.error('❌ 创建 PR 失败: ' + error);
+              console.error('Failed to create PR: ' + error);
             }
 
       - name: Skip notification when no changes
         if: steps.check_changes.outputs.changes_detected == 'false'
         run: |
-          echo "✅ 没有检测到需要同步的更改，跳过 PR 创建"
+          echo "✅ No changes detected, skipping PR creation"
