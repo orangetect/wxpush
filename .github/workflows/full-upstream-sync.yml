@@ -62,7 +62,10 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           title: "🔄 Sync from Upstream"
-          body: "Upstream 同步完成。\n同步分支： ${{ env.sync_branches }}"
+          body: |
+            Upstream 同步完成。
+            同步产生的分支：
+            ${{ env.sync_branches }}
           branch: "sync-upstream-auto"
           labels: ["sync", "automated"]
 
