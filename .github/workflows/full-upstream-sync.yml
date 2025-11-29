@@ -10,7 +10,10 @@ on:
 env:
   UPSTREAM_REPO: "https://github.com/xxxxx/xxxxx.git"
   SYNC_BRANCH_PREFIX: "sync-upstream"
-  SYNC_BRANCHES: "main dev release"   # 可自由调整
+  SYNC_BRANCHES:
+    - main
+    - dev
+    - release   # 可自由调整
   TELEGRAM_ENABLE: "true"             # ← 填 true 开启通知
   DISCORD_ENABLE: "false"
 
@@ -49,7 +52,7 @@ jobs:
       - name: Sync branches
         run: |
           BRANCHES=""
-          for BR in $SYNC_BRANCHES; do
+          for BR in "${SYNC_BRANCHES[@]}"; do
             echo ">>> Syncing branch: $BR"
             if ! git branch -a | grep -q "origin/$BR"; then
               echo "Branch $BR not found, skip."
