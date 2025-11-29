@@ -72,12 +72,7 @@ jobs:
           if git merge --no-ff --no-commit upstream/main; then
             # 如果有更改，创建提交
             if ! git diff --cached --quiet || ! git diff --quiet; then
-              git commit -m "🔀 chore: sync upstream changes from wxpush
-              
-              Automated sync from: ${{ env.UPSTREAM_REPO }}
-              Sync time: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
-              
-              Includes changes from upstream repository."
+              git commit -m "Sync upstream changes from wxpush"
               echo "merge_status=success" >> $GITHUB_OUTPUT
               echo "✅ Merge successful with commit"
             else
@@ -134,7 +129,7 @@ jobs:
         with:
           to: ${{ secrets.TELEGRAM_TO }}
           token: ${{ secrets.TELEGRAM_TOKEN }}
-          message: "🔄 Upstream Sync: ${{ job.status }}, Repo: ${{ github.repository }}, Changes: ${{ steps.check_changes.outputs.changes_detected }}, PR: ${{ steps.merge.outputs.merge_status == 'success' && 'Created' : 'Failed' }}"
+          message: "🔄 Upstream Sync: ${{ job.status }}, Repo: ${{ github.repository }}, Changes: ${{ steps.check_changes.outputs.changes_detected }}"
 
       - name: Cleanup
         if: always()
