@@ -1,14 +1,10 @@
-name: 🔄 Upstream Sync Automation
+name: 🔄 Sync wxpush Upstream
 
 on:
   schedule:
-    - cron: '0 8 * * *'  # 每天 UTC 时间 8:00
+    - cron: '0 20 * * *'  # 每天 UTC 20:00 (北京时间次日4:00)
   workflow_dispatch:
     inputs:
-      target_branches:
-        description: '要同步的分支（逗号分隔）'
-        required: false
-        default: 'main,dev,release'
       skip_notifications:
         description: '跳过通知'
         required: false
@@ -16,34 +12,26 @@ on:
         type: boolean
 
 env:
-  UPSTREAM_REPO: https://github.com/ORIGINAL_OWNER/ORIGINAL_REPO.git
+  UPSTREAM_REPO: https://github.com/frankiejun/wxpush.git
   SYNC_BRANCH_PREFIX: 'chore/sync-upstream'
   GIT_USER_NAME: '🤖 Upstream Sync Bot'
   GIT_USER_EMAIL: 'actions@users.noreply.github.com'
 
 jobs:
   sync-upstream:
-    name: '🔄 Sync Upstream'
+    name: '🔄 Sync wxpush Upstream'
     runs-on: ubuntu-latest
     
     strategy:
       matrix:
-        branch: ['main', 'dev', 'release']
-        include:
-          - branch: 'main'
-            labels: 'sync,production'
-          - branch: 'dev'
-            labels: 'sync,development'
-          - branch: 'release'
-            labels: 'sync,release'
-    
+        branch: ['main']  # 根据 wxpush 仓库的实际分支调整
+
     steps:
       - name: '📥 Checkout repository'
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
-          submodules: recursive
 
       - name: '⚙️ Configure Git'
         run: |
@@ -54,38 +42,38 @@ jobs:
       - name: '🔗 Add upstream remote'
         run: |
           git remote add upstream ${{ env.UPSTREAM_REPO }}
+          echo "✅ 已添加上游仓库: ${{ env.UPSTREAM_REPO }}"
 
       - name: '📡 Fetch upstream changes'
         run: |
-          git fetch upstream --tags
+          echo "正在获取上游仓库更新..."
           git fetch upstream
+          git fetch upstream --tags
+          echo "✅ 上游仓库更新获取完成"
 
       - name: '🔍 Check for changes'
         id: check_changes
         run: |
           echo "检查上游 ${{ matrix.branch }} 分支的更改..."
           
-          # 创建临时分支进行比较
-          git checkout -b temp-check upstream/${{ matrix.branch }}
-          git checkout ${{ matrix.branch }}
+          # 获取上游分支的提交信息
+          UPSTREAM_COMMITS=$(git log ${{ matrix.branch }}..upstream/${{ matrix.branch }} --oneline | head -5)
+          COMMIT_COUNT=$(git rev-list --count ${{ matrix.branch }}..upstream/${{ matrix.branch }} 2>/dev/null || echo "0")
           
-          # 检查是否有实际更改（排除合并提交）
-          if ! git diff --quiet ${{ matrix.branch }} temp-check -- . ':!*.md' ':!docs/' ':!CHANGELOG*'; then
+          if [ "$COMMIT_COUNT" -gt 0 ]; then
             echo "changes_detected=true" >> $GITHUB_OUTPUT
-            echo "🔄 检测到 ${{ matrix.branch }} 分支有实质性更改"
-            
-            # 获取更改统计
-            CHANGES=$(git diff --stat ${{ matrix.branch }} temp-check)
-            echo "changes_summary<<EOF" >> $GITHUB_OUTPUT
-            echo "$CHANGES" >> $GITHUB_OUTPUT
+            echo "commit_count=$COMMIT_COUNT" >> $GITHUB_OUTPUT
+            echo "upstream_commits<<EOF" >> $GITHUB_OUTPUT
+            echo "$UPSTREAM_COMMITS" >> $GITHUB_OUTPUT
             echo "EOF" >> $GITHUB_OUTPUT
+            echo "🔄 检测到 $COMMIT_COUNT 个新提交需要同步"
+            echo "最近提交:"
+            echo "$UPSTREAM_COMMITS"
           else
             echo "changes_detected=false" >> $GITHUB_OUTPUT
-            echo "✅ ${{ matrix.branch }} 分支无实质性更改"
+            echo "commit_count=0" >> $GITHUB_OUTPUT
+            echo "✅ ${{ matrix.branch }} 分支已是最新，无需同步"
           fi
-          
-          # 清理临时分支
-          git branch -D temp-check
 
       - name: '🔄 Create sync branch and merge'
         if: steps.check_changes.outputs.changes_detected == 'true'
@@ -93,81 +81,53 @@ jobs:
         run: |
           set -e
           
-          SYNC_BRANCH="${{ env.SYNC_BRANCH_PREFIX }}-${{ matrix.branch }}-$(date +%s)"
+          SYNC_BRANCH="${{ env.SYNC_BRANCH_PREFIX }}-${{ matrix.branch }}-$(date +%Y%m%d-%H%M%S)"
           echo "branch_name=$SYNC_BRANCH" >> $GITHUB_OUTPUT
           
-          # 创建同步分支
-          git checkout -b $SYNC_BRANCH
+          echo "创建同步分支: $SYNC_BRANCH"
+          git checkout -b "$SYNC_BRANCH"
           
           echo "正在合并上游 ${{ matrix.branch }} 分支..."
-          if git merge --no-edit --no-ff --no-commit upstream/${{ matrix.branch }}; then
-            # 自动合并成功，创建提交
-            git commit -m "🔀 chore: sync upstream ${{ matrix.branch }}
+          if git merge --no-edit --no-ff upstream/${{ matrix.branch }}; then
+            echo "merge_status=success" >> $GITHUB_OUTPUT
+            echo "✅ 自动合并成功"
+            
+            # 创建合并提交信息
+            git commit --amend -m "🔀 chore: sync upstream ${{ matrix.branch }
             
             Automated sync from upstream repository:
             - Source: ${{ env.UPSTREAM_REPO }}
             - Branch: ${{ matrix.branch }}
+            - Commits: ${{ steps.check_changes.outputs.commit_count }}
             - Timestamp: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
             
-            Changes included:
-            ${{ steps.check_changes.outputs.changes_summary }}"
-            
-            echo "merge_status=success" >> $GITHUB_OUTPUT
-            echo "✅ 自动合并成功"
+            Recent changes:
+            ${{ steps.check_changes.outputs.upstream_commits }}"
             
           else
-            # 合并冲突，处理冲突场景
             echo "merge_status=conflict" >> $GITHUB_OUTPUT
-            echo "⚠️ 检测到合并冲突"
-            
-            # 回滚合并尝试
+            echo "❌ 合并冲突，需要手动解决"
             git merge --abort 2>/dev/null || true
-            
-            # 尝试使用 theirs 策略（接受上游更改）
-            if git merge --no-edit -Xtheirs upstream/${{ matrix.branch }}; then
-              echo "merge_status=resolved_with_theirs" >> $GITHUB_OUTPUT
-              git commit -m "🔀 chore: sync upstream ${{ matrix.branch }} (auto-resolve conflicts with upstream)
-              
-              Automated sync with conflict resolution:
-              - Used 'theirs' strategy to prefer upstream changes
-              - Manual review recommended
-              - Timestamp: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-              echo "✅ 使用 theirs 策略解决冲突"
-            else
-              echo "❌ 无法自动解决冲突"
-              exit 1
-            fi
-          fi
-          
-          # 更新子模块（如果存在）
-          if [ -f .gitmodules ]; then
-            echo "更新子模块..."
-            git submodule update --remote --merge
-            if ! git diff --quiet --submodule; then
-              git add .
-              git commit -m "📦 chore: update submodules after upstream sync"
-            fi
+            exit 1
           fi
 
       - name: '📤 Push sync branch'
-        if: steps.check_changes.outputs.changes_detected == 'true' && steps.merge.outputs.merge_status != 'conflict'
+        if: steps.check_changes.outputs.changes_detected == 'true' && steps.merge.outputs.merge_status == 'success'
         run: |
-          git push origin ${{ steps.merge.outputs.branch_name }}
+          echo "推送同步分支到远程仓库..."
+          git push origin "${{ steps.merge.outputs.branch_name }}"
           echo "✅ 同步分支已推送: ${{ steps.merge.outputs.branch_name }}"
 
       - name: '🔄 Create Pull Request'
-        if: steps.check_changes.outputs.changes_detected == 'true' && steps.merge.outputs.merge_status != 'conflict'
+        if: steps.check_changes.outputs.changes_detected == 'true' && steps.merge.outputs.merge_status == 'success'
         uses: actions/github-script@v7
         id: create_pr
         with:
           script: |
-            const { branch, labels } = process.env;
-            const context = require('./context');
-            
             const syncBranch = '${{ steps.merge.outputs.branch_name }}';
             const baseBranch = '${{ matrix.branch }}';
-            const mergeStatus = '${{ steps.merge.outputs.merge_status }}';
-            const changesSummary = `${{ steps.check_changes.outputs.changes_summary }}`;
+            const commitCount = '${{ steps.check_changes.outputs.commit_count }}';
+            const upstreamCommits = `${{ steps.check_changes.outputs.upstream_commits }}`;
             
             try {
               const pr = await github.rest.pulls.create({
@@ -179,25 +139,29 @@ jobs:
                 body: `## 🔄 上游同步请求
                 
 ### 📊 同步信息
-- **上游仓库**: ${'${{ env.UPSTREAM_REPO }}'}
+- **上游仓库**: [frankiejun/wxpush](${{ env.UPSTREAM_REPO }})
 - **目标分支**: \`${baseBranch}\`
 - **同步分支**: \`${syncBranch}\`
-- **合并状态**: ${mergeStatus === 'resolved_with_theirs' ? '✅ 自动解决冲突 (使用上游版本)' : '✅ 自动合并成功'}
+- **新提交数量**: ${commitCount}
 - **同步时间**: ${new Date().toISOString()}
 
-### 📈 更改统计
+### 📝 最近提交
 \`\`\`
-${changesSummary}
+${upstreamCommits}
 \`\`\`
 
 ### 🔍 检查清单
 - [ ] 检查 CI 测试状态
-- [ ] 验证功能完整性
-- [ ] 确认无破坏性变更
-- [ ] 检查依赖更新影响
+- [ ] 验证微信推送功能正常
+- [ ] 确认配置文件兼容性
+- [ ] 测试依赖更新影响
 
 ### ⚠️ 注意事项
-${mergeStatus === 'resolved_with_theirs' ? '> 🚨 此同步包含自动冲突解决，请仔细检查冲突文件' : '> ✅ 此同步为无冲突自动合并'}
+此同步包含从上游仓库 [frankiejun/wxpush] 自动合并的更改，请仔细检查：
+
+1. 配置文件是否有冲突
+2. 依赖版本是否兼容
+3. 核心功能是否正常
 
 ---
 *🤖 此 PR 由 GitHub Actions 自动创建*`
@@ -210,68 +174,16 @@ ${mergeStatus === 'resolved_with_theirs' ? '> 🚨 此同步包含自动冲突�
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: pr.data.number,
-                labels: ['auto-sync', 'upstream'].concat('${{ matrix.labels }}'.split(','))
+                labels: ['auto-sync', 'upstream', 'wxpush']
               });
               
-              // 添加 Reviewer（如果有配置）
-              if ('${{ secrets.PR_REVIEWERS }}') {
-                await github.rest.pulls.requestReviewers({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  pull_number: pr.data.number,
-                  reviewers: '${{ secrets.PR_REVIEWERS }}'.split(',')
-                });
-              }
-              
-              return pr.data.html_url;
+              // 设置 PR 输出
+              core.setOutput('pr_url', pr.data.html_url);
               
             } catch (error) {
               console.error('❌ 创建 PR 失败:', error);
               core.setFailed(`创建 PR 失败: ${error.message}`);
             }
-
-      - name: '🚨 Create Conflict Issue'
-        if: steps.check_changes.outputs.changes_detected == 'true' && steps.merge.outputs.merge_status == 'conflict'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const baseBranch = '${{ matrix.branch }}';
-            
-            const issue = await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: `🚨 上游同步冲突 - ${baseBranch} 分支`,
-              labels: ['conflict', 'upstream-sync', 'need-attention'],
-              body: `## 🚨 上游同步冲突检测
-              
-### 📋 冲突信息
-- **分支**: \`${baseBranch}\`
-- **上游仓库**: ${'${{ env.UPSTREAM_REPO }}'}
-- **检测时间**: ${new Date().toISOString()}
-- **同步分支**: \`${{ steps.merge.outputs.branch_name }}\`
-
-### 🔧 需要手动操作
-检测到无法自动解决的合并冲突，需要手动干预：
-
-1. 检查同步分支: \`${{ steps.merge.outputs.branch_name }}\`
-2. 手动解决冲突文件
-3. 完成合并后关闭此 Issue
-
-### 💡 建议步骤
-\`\`\`bash
-git fetch origin
-git checkout ${{ steps.merge.outputs.branch_name }}
-# 手动解决冲突...
-git add .
-git commit -m "resolve upstream sync conflicts"
-git push origin ${{ steps.merge.outputs.branch_name }}
-\`\`\`
-
----
-*🤖 由 GitHub Actions 自动创建*`
-            });
-            
-            console.log(`✅ 冲突 Issue 创建成功: ${issue.data.html_url}`);
 
       - name: '📢 Send Telegram Notification'
         if: always() && github.event.inputs.skip_notifications != 'true'
@@ -280,30 +192,30 @@ git push origin ${{ steps.merge.outputs.branch_name }}
           to: ${{ secrets.TELEGRAM_TO }}
           token: ${{ secrets.TELEGRAM_TOKEN }}
           message: |
-            ${{ job.status == 'success' && '✅' : '❌' }} *上游同步完成*
+            ${{ job.status == 'success' && '✅' : '❌' }} *wxpush 上游同步完成*
             📁 *仓库:* ${{ github.repository }}
             🌿 *分支:* ${{ matrix.branch }}
-            🔄 *状态:* ${{ steps.check_changes.outputs.changes_detected == 'false' && '无更改' : (steps.merge.outputs.merge_status == 'success' && '自动合并' : (steps.merge.outputs.merge_status == 'conflict' && '冲突需手动解决' : '其他状态')) }}
-            ${{ steps.create_pr.outputs.result && format('📝 PR: {0}', steps.create_pr.outputs.result) || '' }}
+            ${{ steps.check_changes.outputs.changes_detected == 'true' && format('🔄 *新提交:* {0}', steps.check_changes.outputs.commit_count) || '✅ *状态:* 无新更改' }}
+            ${{ steps.create_pr.outputs.pr_url && format('📝 *PR:* {0}', steps.create_pr.outputs.pr_url) || '' }}
+            ${{ job.status == 'failure' && '❌ 任务失败，请检查日志' : '' }}
             ⏰ *时间:* $(date -u +"%Y-%m-%d %H:%M UTC")
 
       - name: '📢 Send Discord Notification'
-        if: always() && github.event.inputs.skip_notifications != 'true'
+        if: always() && github.event.inputs.skip_notifications != 'true' && secrets.DISCORD_WEBHOOK
         uses: sarisia/actions-status-discord@v1
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK }}
-          status: ${{ job.status }}
-          title: "🔄 上游同步状态 - ${{ matrix.branch }}"
+          title: "🔄 wxpush 上游同步 - ${{ job.status }}"
           description: |
             **仓库:** ${{ github.repository }}
             **分支:** ${{ matrix.branch }}
-            **状态:** ${{ steps.check_changes.outputs.changes_detected == 'false' && '✅ 无更改' : (steps.merge.outputs.merge_status == 'success' && '✅ 自动合并' : (steps.merge.outputs.merge_status == 'conflict' && '🚨 冲突需解决' : '⚠️ 其他状态')) }}
-            ${{ steps.create_pr.outputs.result && format('**PR:** <%s>', steps.create_pr.outputs.result) || '' }}
-          color: ${{ steps.check_changes.outputs.changes_detected == 'false' && '00ff00' : (steps.merge.outputs.merge_status == 'success' && '00ff00' : (steps.merge.outputs.merge_status == 'conflict' && 'ff0000' : 'ffff00')) }}
-          username: "Upstream Sync Bot"
-          avatar_url: "https://github.com/github.png"
+            **状态:** ${{ steps.check_changes.outputs.changes_detected == 'true' && '有更新' : '无更新' }}
+            **提交数:** ${{ steps.check_changes.outputs.commit_count }}
+            ${{ steps.create_pr.outputs.pr_url && format('**PR:** <%s>', steps.create_pr.outputs.pr_url) || '' }}
+          color: ${{ job.status == 'success' && '00ff00' : 'ff0000' }}
 
       - name: '🧹 Cleanup'
         if: always()
         run: |
           git remote remove upstream || true
+          echo "✅ 清理完成"
