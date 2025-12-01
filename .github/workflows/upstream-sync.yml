@@ -6,7 +6,7 @@ permissions:
 on:
   schedule:
     - cron: "0 0 * * *" # 每天午夜 00:00
-  workflow_dispatch:
+  workflow_dispatch:  # 手动触发
 
 jobs:
   sync_latest_from_upstream:
@@ -24,12 +24,12 @@ jobs:
         id: sync
         uses: aormsby/Fork-Sync-With-Upstream-action@v3.4
         with:
-          upstream_sync_repo: cmliu/edgetunnel  # 设置为正确的上游仓库
-          upstream_sync_branch: main
-          target_sync_branch: main
+          upstream_sync_repo: frankiejun/wxpush  # 使用正确的上游仓库名称
+          upstream_sync_branch: main  # 上游仓库的主分支
+          target_sync_branch: main  # 目标分支（通常是主分支）
           target_repo_token: ${{ secrets.GITHUB_TOKEN }}  # 自动生成的 GitHub token
 
-          test_mode: false  # 确保同步操作不在测试模式下运行
+          test_mode: false  # 关闭测试模式，进行真实同步
 
       - name: Sync check
         if: failure()
