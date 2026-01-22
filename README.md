@@ -178,11 +178,23 @@ curl -X POST \
 
 ### 成功响应
 
-如果消息成功发送给至少一个用户，服务会返回 `HTTP 200` 状态码和类似 `Successfully sent messages to 1 user(s). First response: ok` 的文本。
+如果消息成功发送给至少一个用户，服务会返回 `HTTP 200` 状态码和 JSON：
+
+```json
+{
+  "msg": "Successfully sent messages to 1 user(s). First response: ok"
+}
+```
 
 ### 失败响应
 
-如果发生错误（如 token 错误、缺少参数、微信接口调用失败等），服务会返回相应的 `HTTP 4xx` 或 `5xx` 状态码和错误信息。
+如果发生错误（如 token 错误、缺少参数、微信接口调用失败等），服务会返回相应的 `HTTP 4xx` 或 `5xx` 状态码和 JSON：
+
+```json
+{
+  "msg": "Invalid token"
+}
+```
 
 ## 🤝 贡献
 

@@ -71,7 +71,11 @@ export default {
 
       // 1. Authenticate the token first
       if (rawTokenFromPath !== env.API_TOKEN) {
-        return new Response('Invalid token', { status: 403 });
+        const responseBody = { msg: 'Invalid token' };
+        return new Response(JSON.stringify(responseBody), {
+          status: 403,
+          headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        });
       }
 
       // 2. Sanitize the token for safe embedding into HTML value attributes
@@ -314,11 +318,19 @@ export default {
       }
 
       if (!content || !title || !requestToken) {
-        return new Response('Missing required parameters: content, title, token', { status: 400 });
+        const responseBody = { msg: 'Missing required parameters: content, title, token' };
+        return new Response(JSON.stringify(responseBody), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        });
       }
 
       if (requestToken !== env.API_TOKEN) {
-        return new Response('Invalid token', { status: 403 });
+        const responseBody = { msg: 'Invalid token' };
+        return new Response(JSON.stringify(responseBody), {
+          status: 403,
+          headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        });
       }
 
       const appid = params.appid || env.WX_APPID;
@@ -328,7 +340,11 @@ export default {
       const base_url = params.base_url || env.WX_BASE_URL;
 
       if (!appid || !secret || !useridStr || !template_id) {
-          return new Response('Missing required environment variables: WX_APPID, WX_SECRET, WX_USERID, WX_TEMPLATE_ID', { status: 500 });
+          const responseBody = { msg: 'Missing required environment variables: WX_APPID, WX_SECRET, WX_USERID, WX_TEMPLATE_ID' };
+          return new Response(JSON.stringify(responseBody), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json; charset=utf-8' },
+          });
       }
 
       const user_list = useridStr.split('|').map(uid => uid.trim()).filter(Boolean);
@@ -336,7 +352,11 @@ export default {
       try {
         const accessToken = await getStableToken(appid, secret);
         if (!accessToken) {
-          return new Response('Failed to get access token', { status: 500 });
+          const responseBody = { msg: 'Failed to get access token' };
+          return new Response(JSON.stringify(responseBody), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json; charset=utf-8' },
+          });
         }
 
         const results = await Promise.all(user_list.map(userid =>
@@ -346,15 +366,27 @@ export default {
         const successfulMessages = results.filter(r => r.errmsg === 'ok');
 
         if (successfulMessages.length > 0) {
-          return new Response(`Successfully sent messages to ${successfulMessages.length} user(s). First response: ok`, { status: 200 });
+          const responseBody = { msg: `Successfully sent messages to ${successfulMessages.length} user(s). First response: ok` };
+          return new Response(JSON.stringify(responseBody), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json; charset=utf-8' },
+          });
         } else {
           const firstError = results.length > 0 ? results[0].errmsg : "Unknown error";
-          return new Response(`Failed to send messages. First error: ${firstError}`, { status: 500 });
+          const responseBody = { msg: `Failed to send messages. First error: ${firstError}` };
+          return new Response(JSON.stringify(responseBody), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json; charset=utf-8' },
+          });
         }
 
       } catch (error) {
         console.error('Error:', error);
-        return new Response(`An error occurred: ${error.message}`, { status: 500 });
+        const responseBody = { msg: `An error occurred: ${error.message}` };
+        return new Response(JSON.stringify(responseBody), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        });
       }
     }
 
