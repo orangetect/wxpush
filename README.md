@@ -9,7 +9,8 @@
 ✅ 真正的微信原生弹窗 + 声音提醒  
 ✅ 支持多用户  
 ✅ 跳转稳定  
-✅ 可无限换皮肤 (使用项目[wxpushSkin](https://github.com/frankiejun/wxpushSkin))
+✅ 可无限换皮肤 (使用项目[wxpushSkin](https://github.com/frankiejun/wxpushSkin))  
+✅ 支持docker部署
 
 ## 🎬 视频教学
 
@@ -22,7 +23,7 @@
 
 ## 🚀 部署指南
 
-我们提供两种简单的部署方式，您可以根据自己的需求选择其中一种。
+我们提供多种简单的部署方式，您可以根据自己的需求选择其中一种。
 
 ### 方法一：直接粘贴代码到 Cloudflare (最简单)
 
@@ -55,7 +56,51 @@
         *   `WX_BASE_URL`: (可选) 点击模板消息后跳转的基础 URL。
     *   **注意**：添加变量时，请确保勾选 **加密** 选项，以保护您的凭证安全。
 
-### 方法二：通过关联 GitHub 仓库自动部署
+### 方法二：Docker 直接部署（需要有docker环境）
+
+**拉取镜像**
+
+```bash
+docker pull ghcr.io/frankiejun/wxpush:latest
+```
+
+**运行容器**
+
+```bash
+docker run -d --name wxpush \
+  -p 3939:3939 \
+  -e API_TOKEN="your_token" \
+  -e WX_APPID="your_appid" \
+  -e WX_SECRET="your_secret" \
+  -e WX_USERID="openid1|openid2" \
+  -e WX_TEMPLATE_ID="your_template_id" \
+  -e WX_BASE_URL="https://example.com" \
+  -e PORT="3939" \
+  ghcr.io/frankiejun/wxpush:latest
+```
+
+**docker-compose**
+
+创建 `docker-compose.yml`，直接使用镜像运行：
+
+```yaml
+services:
+  wxpush:
+    image: ghcr.io/frankiejun/wxpush:latest
+    ports:
+      - "3939:3939"
+    environment:
+      API_TOKEN: "your_token"
+      WX_APPID: "your_appid"
+      WX_SECRET: "your_secret"
+      WX_USERID: "openid1|openid2"
+      WX_TEMPLATE_ID: "your_template_id"
+      WX_BASE_URL: "https://example.com"
+      PORT: "3939"
+    restart: unless-stopped
+```
+
+### 方法三：通过关联 GitHub 仓库自动部署
 
 如果您希望通过 Git 进行版本控制和持续集成，推荐使用此方法。
 
