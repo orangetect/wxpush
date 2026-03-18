@@ -212,9 +212,9 @@ POST
 
 ```bash
 curl -X POST \
-  https://<您的Worker地址>/wxsend \
-  -H 'Authorization': '你的token' \
-  -H 'Content-Type': 'application/json' \
+  "https://<您的Worker地址>/wxsend" \
+  -H "Authorization: 你的token" \
+  -H "Content-Type: application/json" \
   -d '{
     "title": "来自 cURL 的消息",
     "content": "自动化任务已完成。"
