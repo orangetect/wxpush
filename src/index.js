@@ -933,7 +933,7 @@ async function sendMessage(accessToken, userid, template_id, base_url, title, co
   const encoded_message = encodeURIComponent(content);
   const encoded_date = encodeURIComponent(date);
 
-  const separator = base_url.includes('?') ? '&' : '?';
+  const separator = base_url?.includes('?') ? '&' : '?';
   const payload = {
     touser: userid,
     template_id: template_id,
